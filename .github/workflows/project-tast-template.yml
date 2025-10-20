@@ -1,0 +1,215 @@
+name: Apply task template to new Project items
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: "Organization login"
+        required: true
+        default: "TesteOrgTask"
+      project_number:
+        description: "Project number"
+        required: true
+        default: "1"
+  schedule:
+    - cron: "*/10 * * * *" # a cada 10 min
+
+permissions:
+  contents: read
+  issues: write
+  projects: write
+
+jobs:
+  apply-template:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fill Draft Issues with template + set default fields
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const org = (core.getInput('org') || process.env.ORG) || 'TesteOrgTask';
+            const projectNumber = parseInt(core.getInput('project_number') || process.env.PROJECT_NUMBER || '2', 10);
+
+            // 1) Buscar o ID do Project e os campos
+            const projectQuery = `
+              query($org: String!, $number: Int!) {
+                organization(login: $org) {
+                  projectV2(number: $number) {
+                    id
+                    title
+                    fields(first: 50) {
+                      nodes {
+                        __typename
+                        ... on ProjectV2FieldCommon {
+                          id
+                          name
+                        }
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                    items(first: 50, orderBy: {field: CREATED_AT, direction: DESC}) {
+                      nodes {
+                        id
+                        createdAt
+                        content {
+                          __typename
+                          ... on DraftIssue {
+                            id
+                            title
+                            body
+                          }
+                          ... on Issue {
+                            id
+                            number
+                            body
+                            title
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            const projectData = await github.graphql(projectQuery, { org, number: projectNumber });
+            const project = projectData.organization.projectV2;
+            core.info(`Project: ${project.title}`);
+
+            // Mapear campos úteis
+            function findField(name) {
+              return project.fields.nodes.find(f => f.name?.toLowerCase() === name.toLowerCase());
+            }
+            const statusField = findField('Status'); // single-select
+            const priorityField = findField('Priority'); // single-select
+            const estimateField = findField('Estimate'); // number
+            const sizeField = findField('Size'); // single-select ou number, depende do seu setup
+            const startDateField = findField('Start date'); // date
+            const endDateField = findField('End date'); // date
+
+            // Opções padrão (ajuste os nomes conforme seus campos)
+            const statusTodoOptId = statusField?.options?.find(o => o.name.toLowerCase() === 'todo')?.id;
+            const priorityDefaultOptId = priorityField?.options?.find(o => o.name.toLowerCase() === 'medium' || o.name.toLowerCase() === 'média' )?.id
+              || priorityField?.options?.[0]?.id;
+            const sizeDefaultOptId = sizeField?.options?.find(o => o.name.toLowerCase() === 's')?.id
+              || sizeField?.options?.[0]?.id;
+
+            // 2) Definir o corpo markdown do template
+            const TEMPLATE = `
+            ## 🎯 Objetivo
+            Descreva o que precisa ser feito.
+
+            ## 🧭 Contexto
+            Explique o motivo e o impacto.
+
+            ## ✅ Critérios de Aceite
+            - [ ] Item 1
+            - [ ] Item 2
+
+            ## 🔢 Estimativa
+            Preencher campo **Estimate**.
+
+            ## 🗓️ Datas
+            Preencher **Start date** e **End date** se aplicável.
+            `.trim();
+
+            // 3) Filtrar itens: DraftIssues sem body (ou body vazio)
+            const candidates = project.items.nodes
+              .filter(n => n.content?.__typename === 'DraftIssue')
+              .filter(n => !n.content.body || n.content.body.trim().length === 0);
+
+            if (candidates.length === 0) {
+              core.info('Nenhum Draft Issue novo para aplicar template.');
+              return;
+            }
+
+            core.info(`Aplicando template em ${candidates.length} item(ns)...`);
+
+            // Mutations
+            const updateDraftMutation = `
+              mutation($draftId: ID!, $title: String, $body: String) {
+                updateProjectV2DraftIssue(input: {
+                  draftIssueId: $draftId,
+                  title: $title,
+                  body: $body
+                }) {
+                  draftIssue { id }
+                }
+              }
+            `;
+
+            const updateFieldMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId,
+                  itemId: $itemId,
+                  fieldId: $fieldId,
+                  value: $value
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `;
+
+            // 4) Atualizar cada DraftIssue
+            for (const it of candidates) {
+              const draft = it.content;
+
+              // 4.1) Preencher corpo (e ajustar título, se quiser)
+              await github.graphql(updateDraftMutation, {
+                draftId: draft.id,
+                title: draft.title?.replace(/^\s*$/, '') || 'Nova tarefa',
+                body: TEMPLATE
+              });
+
+              // 4.2) Setar campos padrão (se existirem no seu Project)
+              // Status = Todo
+              if (statusField?.id && statusTodoOptId) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: it.id,
+                  fieldId: statusField.id,
+                  value: { singleSelectOptionId: statusTodoOptId }
+                });
+              }
+
+              // Priority = default
+              if (priorityField?.id && priorityDefaultOptId) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: it.id,
+                  fieldId: priorityField.id,
+                  value: { singleSelectOptionId: priorityDefaultOptId }
+                });
+              }
+
+              // Size = default (se for single-select)
+              if (sizeField?.id && sizeDefaultOptId) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: it.id,
+                  fieldId: sizeField.id,
+                  value: { singleSelectOptionId: sizeDefaultOptId }
+                });
+              }
+
+              // Estimate = 1 (exemplo)
+              if (estimateField?.id) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: it.id,
+                  fieldId: estimateField.id,
+                  value: { number: 1 }
+                });
+              }
+
+              // Start/End date: não setamos automaticamente (evita datas erradas).
+              // Exemplo de como setar:
+              // if (startDateField?.id) { ... value: { date: "2025-10-20" } }
+            }
+
+            core.info('Template aplicado com sucesso ✔️');
