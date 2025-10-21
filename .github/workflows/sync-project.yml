@@ -123,12 +123,4 @@ jobs:
                 }`, { projectId, itemId, fieldId: fDue.id, date: due });
             }
 
-### Check rápido
 
-- [ ] Removi `organization-projects` das `permissions`.  
-- [ ] Sem emojis/texto solto nas linhas (use comentários com `#`).  
-- [ ] Apenas **um** `with:` no step (contendo `github-token` **e** `script`).  
-- [ ] `ORG_PAT` criado (se for Project da org) com **Projects: Read/Write** e adicionado em *Settings → Secrets → Actions*.  
-- [ ] Campos no Project com nomes exatos: `Requester`, `Prioridade`, `Due date`.
-
-Se ainda der erro, cola aqui a nova mensagem (linha/coluna) que eu ajusto no ato.
