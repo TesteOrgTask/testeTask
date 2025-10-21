@@ -8,8 +8,7 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
-  repository-projects: write     # ✅ para projects ligados a repositório
-  organization-projects: write   # ✅ para projects da organização
+  repository-projects: write   # único permission válido para projects no GITHUB_TOKEN
 
 jobs:
   sync:
@@ -19,14 +18,14 @@ jobs:
     steps:
       - name: Sync fields
         uses: actions/github-script@v7
-        # 👉 se seu Project for da ORG e o GITHUB_TOKEN não tiver acesso, descomente:
-        with:
-        github-token: ${{ secrets.ORG_PAT }}
         env:
+          # === Edite estes valores ===
           SCOPE: org            # "org" para Project da org, "user" para Project pessoal
-          OWNER: sua-org        # se SCOPE=org → login da org; se SCOPE=user → seu usuário
-          PROJECT_NUMBER: "1"   # número do Project (v2)
+          OWNER: TesteOrgTask        # se SCOPE=org → login da org; se SCOPE=user → seu usuário
+          PROJECT_NUMBER: "3"   # número do Project (v2)
         with:
+          # Para Project da organização, recomendo um PAT com Projects: Read/Write
+          github-token: ${{ secrets.ORG_PAT }}   # troque para ${{ github.token }} se for user project
           script: |
             const scope = process.env.SCOPE;          // "org" | "user"
             const owner = process.env.OWNER;
@@ -34,6 +33,7 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body || "";
 
+            // Lê seções do Issue Form
             const take = (label) => {
               const re = new RegExp(`(?<=### ${label}[\\r\\n]+)([\\s\\S]*?)(?=\\n### |$)`);
               const m = body.match(re);
@@ -44,6 +44,7 @@ jobs:
             const priority  = take("Prioridade");
             const due       = take("Prazo desejado \\(YYYY-MM-DD\\)");
 
+            // Busca Project + fields
             const q = `
               query($owner:String!, $number:Int!) {
                 ${scope === "org" ? "organization(login:$owner)" : "user(login:$owner)"} {
@@ -68,17 +69,18 @@ jobs:
 
             const projectId = root.id;
 
-            // garante item no project
+            // Garante item no Project
             await github.graphql(`
               mutation($projectId:ID!, $contentId:ID!) {
                 addProjectV2ItemById(input:{ projectId:$projectId, contentId:$contentId }) { item { id } }
               }`, { projectId, contentId: issue.node_id });
 
-            // encontra o item recem-adicionado
+            // Encontra o item referente à issue
             const items = root.items.nodes;
             const itemId = (items.find(n => n.content?.number === issue.number) || items[0])?.id;
             if (!itemId) return;
 
+            // Atualiza campos
             const fields = root.fields.nodes;
             const byName = (n) => fields.find(f => f.name === n);
 
@@ -120,3 +122,13 @@ jobs:
                   }) { projectV2Item { id } }
                 }`, { projectId, itemId, fieldId: fDue.id, date: due });
             }
+
+### Check rápido
+
+- [ ] Removi `organization-projects` das `permissions`.  
+- [ ] Sem emojis/texto solto nas linhas (use comentários com `#`).  
+- [ ] Apenas **um** `with:` no step (contendo `github-token` **e** `script`).  
+- [ ] `ORG_PAT` criado (se for Project da org) com **Projects: Read/Write** e adicionado em *Settings → Secrets → Actions*.  
+- [ ] Campos no Project com nomes exatos: `Requester`, `Prioridade`, `Due date`.
+
+Se ainda der erro, cola aqui a nova mensagem (linha/coluna) que eu ajusto no ato.
