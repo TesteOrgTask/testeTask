@@ -1,85 +1,103 @@
 name: Sync Issue Form → Project fields
+
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
 
 permissions:
   contents: read
   issues: read
   pull-requests: read
-  projects: write
+  repository-projects: write     # ✅ para projects ligados a repositório
+  organization-projects: write   # ✅ para projects da organização
 
 jobs:
   sync:
+    # opcional: só roda para issues do template Task
+    if: contains(github.event.issue.labels.*.name, 'task') || startsWith(github.event.issue.title, '[Task]')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      - name: Sync fields
+        uses: actions/github-script@v7
+        # 👉 se seu Project for da ORG e o GITHUB_TOKEN não tiver acesso, descomente:
+        with:
+        github-token: ${{ secrets.ORG_PAT }}
         env:
-          ORG: your-org
-          PROJECT_NUMBER: 1
+          SCOPE: org            # "org" para Project da org, "user" para Project pessoal
+          OWNER: sua-org        # se SCOPE=org → login da org; se SCOPE=user → seu usuário
+          PROJECT_NUMBER: "1"   # número do Project (v2)
         with:
           script: |
-            const body = context.payload.issue.body || "";
-            const parse = (label) => {
+            const scope = process.env.SCOPE;          // "org" | "user"
+            const owner = process.env.OWNER;
+            const projectNumber = Number(process.env.PROJECT_NUMBER);
+            const issue = context.payload.issue;
+            const body = issue.body || "";
+
+            const take = (label) => {
               const re = new RegExp(`(?<=### ${label}[\\r\\n]+)([\\s\\S]*?)(?=\\n### |$)`);
               const m = body.match(re);
               return m ? m[1].trim() : "";
             };
-            const requester = parse("Quem está pedindo?");
-            const priority  = parse("Prioridade");
-            const due       = parse("Prazo desejado \\(YYYY-MM-DD\\)");
 
-            // 1) Descobre IDs do Project e adiciona/pega item
-            const { org, projectNumber } = { org: process.env.ORG, projectNumber: Number(process.env.PROJECT_NUMBER) };
-            const issueNodeId = context.payload.issue.node_id;
+            const requester = take("Quem está pedindo\\?");
+            const priority  = take("Prioridade");
+            const due       = take("Prazo desejado \\(YYYY-MM-DD\\)");
 
-            const qProject = await github.graphql(`
-              query($org:String!, $number:Int!) {
-                organization(login:$org){
-                  projectV2(number:$number){
+            const q = `
+              query($owner:String!, $number:Int!) {
+                ${scope === "org" ? "organization(login:$owner)" : "user(login:$owner)"} {
+                  projectV2(number:$number) {
                     id
-                    fields(first:50){ nodes { id, name, ... on ProjectV2SingleSelectField { options { id name } } } }
+                    items(first: 50, query: "${issue.number}") {
+                      nodes { id content { ... on Issue { id number } } }
+                    }
+                    fields(first: 50) {
+                      nodes {
+                        id
+                        name
+                        ... on ProjectV2SingleSelectField { options { id name } }
+                      }
+                    }
                   }
                 }
-              }`,
-              { org, number: projectNumber }
-            );
-            const project = qProject.organization.projectV2;
-            const projectId = project.id;
+              }
+            `;
+            const root = (await github.graphql(q, { owner, number: projectNumber }))
+              [scope === "org" ? "organization" : "user"].projectV2;
 
-            // Add item (idempotente: se já existe, GitHub ignora duplicata)
+            const projectId = root.id;
+
+            // garante item no project
             await github.graphql(`
               mutation($projectId:ID!, $contentId:ID!) {
-                addProjectV2ItemById(input:{projectId:$projectId, contentId:$contentId}) { item { id } }
-              }`, { projectId, contentId: issueNodeId });
+                addProjectV2ItemById(input:{ projectId:$projectId, contentId:$contentId }) { item { id } }
+              }`, { projectId, contentId: issue.node_id });
 
-            // Pega o item recém-adicionado
-            const qItem = await github.graphql(`
-              query($projectId:ID!, $contentId:ID!){
-                node(id:$projectId){ ... on ProjectV2 {
-                  items(first:20, query:"${context.payload.issue.number}") { nodes { id, content { ... on Issue { number id } } } }
-                }}
-              }`, { projectId });
-            const itemId = qItem.node.items.nodes.find(n => n.content?.number === context.payload.issue.number)?.id;
+            // encontra o item recem-adicionado
+            const items = root.items.nodes;
+            const itemId = (items.find(n => n.content?.number === issue.number) || items[0])?.id;
+            if (!itemId) return;
 
-            // Helper para achar campo
-            const fieldByName = (name) => project.fields.nodes.find(f => f.name === name);
+            const fields = root.fields.nodes;
+            const byName = (n) => fields.find(f => f.name === n);
 
-            // 2) Atualiza campos
-            const requesterField = fieldByName("Requester");
-            if (requesterField && requester) {
+            // Requester (Text)
+            const fRequester = byName("Requester");
+            if (fRequester && requester) {
               await github.graphql(`
                 mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $val:String!) {
                   updateProjectV2ItemFieldValue(input:{
                     projectId:$projectId, itemId:$itemId, fieldId:$fieldId,
                     value:{ text:$val }
                   }) { projectV2Item { id } }
-                }`, { projectId, itemId, fieldId: requesterField.id, val: requester });
+                }`, { projectId, itemId, fieldId: fRequester.id, val: requester });
             }
 
-            const priorityField = fieldByName("Prioridade");
-            if (priorityField && priority) {
-              const opt = priorityField.options.find(o => o.name === priority);
+            // Prioridade (Single select)
+            const fPriority = byName("Prioridade");
+            if (fPriority && priority) {
+              const opt = fPriority.options?.find(o => o.name === priority);
               if (opt) {
                 await github.graphql(`
                   mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $opt:ID!) {
@@ -87,17 +105,18 @@ jobs:
                       projectId:$projectId, itemId:$itemId, fieldId:$fieldId,
                       value:{ singleSelectOptionId:$opt }
                     }) { projectV2Item { id } }
-                  }`, { projectId, itemId, fieldId: priorityField.id, opt: opt.id });
+                  }`, { projectId, itemId, fieldId: fPriority.id, opt: opt.id });
               }
             }
 
-            const dueField = fieldByName("Due date");
-            if (dueField && due) {
+            // Due date (Date)
+            const fDue = byName("Due date");
+            if (fDue && /^\\d{4}-\\d{2}-\\d{2}$/.test(due)) {
               await github.graphql(`
                 mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $date:Date!) {
                   updateProjectV2ItemFieldValue(input:{
                     projectId:$projectId, itemId:$itemId, fieldId:$fieldId,
                     value:{ date:$date }
                   }) { projectV2Item { id } }
-                }`, { projectId, itemId, fieldId: dueField.id, date: due });
+                }`, { projectId, itemId, fieldId: fDue.id, date: due });
             }
