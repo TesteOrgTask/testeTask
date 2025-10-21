@@ -1,0 +1,32 @@
+name: Task
+description: Solicitar uma task com dados padronizados
+title: "[Task]: "
+labels: [task]
+body:
+  - type: input
+    id: requester
+    attributes:
+      label: Quem está pedindo?
+      description: Nome/área do requester (se diferente do autor)
+      placeholder: ex: Produto – Xandão
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Prioridade
+      options: [P0, P1, P2, P3]
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto / problema
+    validations:
+      required: true
+  - type: input
+    id: due
+    attributes:
+      label: Prazo desejado (YYYY-MM-DD)
+    validations:
+      required: false
