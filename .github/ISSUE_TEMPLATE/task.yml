@@ -2,6 +2,10 @@ name: 🧩 Template de Tasks
 description: Criação de uma nova tarefa (feature, correção, documentação, etc.)
 assignees: []
 
+title:
+  placeholder: "Escreva um título começando com um verbo no infinitivo (ex: Criar, finalizar, ajustar...)"
+
+
 body:
   - type: input
     id: prazo
@@ -49,6 +53,6 @@ body:
     attributes:
       label:  Descrição
       description: Descreva a tarefa a ser realizada.
-      placeholder: Detalhes da tarefa...
+      placeholder: Detalhe o que é entregável na tarefa, o objetivo, etc.
     validations:
       required: true
