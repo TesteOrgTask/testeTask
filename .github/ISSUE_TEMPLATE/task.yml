@@ -1,39 +1,53 @@
-name: 🐞 Bug Report
-description: Reportar um bug ou comportamento inesperado
-title: "[BUG] "
-labels: ["bug", "triage"]
+name: Template de tasks
 assignees: []
 
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Obrigado por reportar um bug!  
-        Por favor, preencha as informações abaixo com o máximo de detalhes possível.
-
   - type: input
-    id: summary
-    attributes:
-      label: Resumo do Bug
-      description: Explique em uma frase o problema observado.
-      placeholder: O que aconteceu de errado?
-
-  - type: input
-    id: deadline
+    id: prazo
     attributes:
       label: 📅 Prazo estimado
-      description: Informe a data prevista para resolução (formato DD-MM-AAAA).
-      placeholder: 30-10-2025
+      description: Informe a data prevista (formato DD/MM/AA).
+      placeholder: 30/10/25
     validations:
       required: false
 
   - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      description: Defina a urgência da tarefa.
+      options:
+        - Alta
+        - Média
+        - Baixa
+    validations:
+      required: true
+
+  - type: input
+    id: solicitante
+    attributes:
+      label: Solicitante
+      description: Quem está pedindo essa feature?
+      placeholder: Nome do solicitante
+    validations:
+      required: true
+
+  - type: dropdown
     id: area
     attributes:
-      label: Área responsável
-      description: Selecione a área relacionada ao bug.
+      label: Área
+      description: Escolha a área responsável.
       options:
-        - Engenharia
+        - ENG
         - BI
+    validations:
+      required: true
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: 📝 Descrição
+      description: Descreva a tarefa a ser realizada.
+      placeholder: Detalhes da tarefa...
     validations:
       required: true
