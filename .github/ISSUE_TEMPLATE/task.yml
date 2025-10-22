@@ -51,3 +51,14 @@ body:
     attributes:
       label: Informações adicionais
       placeholder: Logs, prints, ou insights extras
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área responsável
+      description: Selecione a área relacionada ao bug.
+      options:
+        - Engenharia
+        - BI
+    validations:
+      required: true
