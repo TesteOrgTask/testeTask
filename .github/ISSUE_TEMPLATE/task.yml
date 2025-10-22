@@ -1,32 +1,50 @@
-name: Task
-description: Solicitar uma task com dados padronizados
-title: "[Task]: "
-labels: [task]
+name: Job Application
+description: Track a job application process
+title: "<Application Description> @ <Company Name>"
+projects: ["💼 application tracker"]
+assignees:
+  - taniomi
 body:
-  - type: input
-    id: requester
+  - type: checkboxes
     attributes:
-      label: Quem está pedindo?
-      description: Nome/área do requester (se diferente do autor)
-      placeholder: ex: Produto – Xandão
-    validations:
-      required: true
+      label: Application Steps
+      options:
+        - label: 📧 Email sent
+        - label: 📥 Application submitted
+        - label: 🔗 LinkedIn connection made
+        - label: 📩 In contact with company
+        - label: 🧑💼 Interview scheduled/completed
+        - label: 🤝 Deal closed
+        - label: 🔮 Future opportunities
   - type: dropdown
-    id: priority
+    id: position
     attributes:
-      label: Prioridade
-      options: [P0, P1, P2, P3]
-    validations:
-      required: true
-  - type: textarea
-    id: context
-    attributes:
-      label: Contexto / problema
+      label: Position
+      options:
+        - Junior Data Engineer
+        - Data Engineer
+        - Senior Data Engineer
+        - Data Engineer Intern
+        
+        - Junior Data Analytics
+        - Data Analytics
+        - Senior Data Analytics
+
+        - Junior Data Analyst
+        - Data Analyst
     validations:
       required: true
   - type: input
-    id: due
+    id: job_posting
     attributes:
-      label: Prazo desejado (YYYY-MM-DD)
+      label: Link to Job Posting
+      placeholder: Enter URL
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      placeholder: Add any additional details
     validations:
       required: false
