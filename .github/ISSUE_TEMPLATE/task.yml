@@ -18,39 +18,14 @@ body:
       description: Explique em uma frase o problema observado.
       placeholder: O que aconteceu de errado?
 
-  - type: textarea
-    id: steps
+  - type: input
+    id: deadline
     attributes:
-      label: Passos para reproduzir
-      description: Liste os passos para reproduzir o problema.
-      placeholder: |
-        1. Vá até '...'
-        2. Clique em '...'
-        3. Observe o erro
+      label: 📅 Prazo estimado
+      description: Informe a data prevista para resolução (formato DD-MM-AAAA).
+      placeholder: 30-10-2025
     validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: Comportamento Esperado
-      placeholder: O que você esperava que acontecesse?
-
-  - type: textarea
-    id: environment
-    attributes:
-      label: Ambiente
-      description: Informe detalhes do sistema, versão, etc.
-      placeholder: |
-        - Sistema operacional:
-        - Versão do app:
-        - Navegador:
-
-  - type: textarea
-    id: extra
-    attributes:
-      label: Informações adicionais
-      placeholder: Logs, prints, ou insights extras
+      required: false
 
   - type: dropdown
     id: area
