@@ -10,43 +10,11 @@ body:
         Exemplo: **Criar endpoint de login**
 
   - type: input
-    id: prazo
-    attributes:
-      label: Prazo estimado
-      description: Informe a data prevista (formato DD/MM/AA).
-      placeholder: 30/10/25
-    validations:
-      required: false
-
-  - type: dropdown
-    id: prioridade
-    attributes:
-      label: Prioridade
-      description: Defina a urgência da tarefa.
-      options:
-        - Alta
-        - Média
-        - Baixa
-    validations:
-      required: true
-
-  - type: input
     id: solicitante
     attributes:
       label: Solicitante
       description: Quem está pedindo essa tarefa?
       placeholder: Nome do solicitante
-    validations:
-      required: true
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Área
-      description: Escolha a área responsável.
-      options:
-        - ENG
-        - BI
     validations:
       required: true
 
