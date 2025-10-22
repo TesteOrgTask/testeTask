@@ -1,50 +1,53 @@
-name: Job Application
-description: Track a job application process
-title: "<Application Description> @ <Company Name>"
-projects: ["💼 application tracker"]
-assignees:
-  - taniomi
-body:
-  - type: checkboxes
-    attributes:
-      label: Application Steps
-      options:
-        - label: 📧 Email sent
-        - label: 📥 Application submitted
-        - label: 🔗 LinkedIn connection made
-        - label: 📩 In contact with company
-        - label: 🧑💼 Interview scheduled/completed
-        - label: 🤝 Deal closed
-        - label: 🔮 Future opportunities
-  - type: dropdown
-    id: position
-    attributes:
-      label: Position
-      options:
-        - Junior Data Engineer
-        - Data Engineer
-        - Senior Data Engineer
-        - Data Engineer Intern
-        
-        - Junior Data Analytics
-        - Data Analytics
-        - Senior Data Analytics
+name: 🐞 Bug Report
+description: Reportar um bug ou comportamento inesperado
+title: "[BUG] "
+labels: ["bug", "triage"]
+assignees: []
 
-        - Junior Data Analyst
-        - Data Analyst
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar um bug!  
+        Por favor, preencha as informações abaixo com o máximo de detalhes possível.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Resumo do Bug
+      description: Explique em uma frase o problema observado.
+      placeholder: O que aconteceu de errado?
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      description: Liste os passos para reproduzir o problema.
+      placeholder: |
+        1. Vá até '...'
+        2. Clique em '...'
+        3. Observe o erro
     validations:
       required: true
-  - type: input
-    id: job_posting
-    attributes:
-      label: Link to Job Posting
-      placeholder: Enter URL
-    validations:
-      required: false
+
   - type: textarea
-    id: notes
+    id: expected
     attributes:
-      label: Notes
-      placeholder: Add any additional details
-    validations:
-      required: false
+      label: Comportamento Esperado
+      placeholder: O que você esperava que acontecesse?
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Ambiente
+      description: Informe detalhes do sistema, versão, etc.
+      placeholder: |
+        - Sistema operacional:
+        - Versão do app:
+        - Navegador:
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Informações adicionais
+      placeholder: Logs, prints, ou insights extras
