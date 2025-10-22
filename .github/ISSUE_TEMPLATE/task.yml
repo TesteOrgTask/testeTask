@@ -1,11 +1,12 @@
-name: Template de tasks
+name: 🧩 Template de Tasks
+description: Criação de uma nova tarefa (feature, correção, documentação, etc.)
 assignees: []
 
 body:
   - type: input
     id: prazo
     attributes:
-      label: 📅 Prazo estimado
+      label:  Prazo estimado
       description: Informe a data prevista (formato DD/MM/AA).
       placeholder: 30/10/25
     validations:
@@ -14,7 +15,7 @@ body:
   - type: dropdown
     id: prioridade
     attributes:
-      label: Prioridade
+      label:  Prioridade
       description: Defina a urgência da tarefa.
       options:
         - Alta
@@ -26,8 +27,8 @@ body:
   - type: input
     id: solicitante
     attributes:
-      label: Solicitante
-      description: Quem está pedindo essa feature?
+      label:  Solicitante
+      description: Quem está pedindo essa tarefa?
       placeholder: Nome do solicitante
     validations:
       required: true
@@ -35,7 +36,7 @@ body:
   - type: dropdown
     id: area
     attributes:
-      label: Área
+      label:  Área
       description: Escolha a área responsável.
       options:
         - ENG
@@ -46,7 +47,7 @@ body:
   - type: textarea
     id: descricao
     attributes:
-      label: 📝 Descrição
+      label:  Descrição
       description: Descreva a tarefa a ser realizada.
       placeholder: Detalhes da tarefa...
     validations:
