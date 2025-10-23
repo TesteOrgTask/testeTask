@@ -13,7 +13,7 @@ jobs:
       # O 'projects: write' não existe como granular aqui,
       # mas o GH CLI usará o PROJECTS_TOKEN (PAT) para GraphQL.
     env:
-      GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+      GH_TOKEN: ${{ secrets.ORG_PAT }}
       OWNER: TesteOrgTask               # << ajuste aqui (ex.: atter-data)
       OWNER_TYPE: org                      # "org" ou "user"
       PROJECT_NUMBER: 3                    # << ajuste aqui (ex.: 1)
