@@ -18,7 +18,7 @@ jobs:
       contents: read
     env:
       # 👉 Secrets/constantes
-      GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}         # PAT classic com: project, read:org (+ repo se privado)
+      GH_TOKEN: ${{ secrets.ORG_PAT }}         # PAT classic com: project, read:org (+ repo se privado)
       OWNER: TesteOrgTask
       PROJECT_ID: PVT_kwDODkGqB84BGE05                # seu Project v2
       FIELD_ID: PVTIF_lADODkGqB84BGE05zg3XHl0         # campo "Iteration"
