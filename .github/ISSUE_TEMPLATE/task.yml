@@ -1,5 +1,6 @@
 name: 🧩 Template de Tasks
 description: Criação de uma nova tarefa (feature, correção, documentação, etc.)
+labels: []
 assignees: []
 
 body:
@@ -7,7 +8,7 @@ body:
     attributes:
       value: |
         **Título da issue:** comece com um **verbo no infinitivo** (ex.: *Criar*, *Ajustar*, *Finalizar*).
-        Exemplo: **Criar endpoint de login**
+        Exemplo: **Criar endpoint de login no azure**
 
   - type: input
     id: solicitante

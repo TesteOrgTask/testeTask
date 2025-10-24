@@ -2,7 +2,13 @@ name: Set current iteration (Projects v2)
 
 on:
   issues:
-    types: [opened, transferred]   # quando a issue nasce ou é transferida
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number para testar manualmente"
+        required: false
+        type: string
 
 jobs:
   set-iteration:
@@ -10,147 +16,161 @@ jobs:
     permissions:
       issues: read
       contents: read
-      # O 'projects: write' não existe como granular aqui,
-      # mas o GH CLI usará o PROJECTS_TOKEN (PAT) para GraphQL.
     env:
-      GH_TOKEN: ${{ secrets.ORG_PAT }}
-      OWNER: TesteOrgTask               # << ajuste aqui (ex.: atter-data)
-      OWNER_TYPE: org                      # "org" ou "user"
-      PROJECT_NUMBER: 3                    # << ajuste aqui (ex.: 1)
+      # 👉 Secrets/constantes
+      GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}         # PAT classic com: project, read:org (+ repo se privado)
+      OWNER: TesteOrgTask
+      PROJECT_ID: PVT_kwDODkGqB84BGE05                # seu Project v2
+      FIELD_ID: PVTIF_lADODkGqB84BGE05zg3XHl0         # campo "Iteration"
 
     steps:
-      - name: Install jq (if missing)
+      - name: Sanity / whoami
         run: |
-          if ! command -v jq >/dev/null; then
-            sudo apt-get update && sudo apt-get install -y jq
+          gh --version
+          gh api user
+
+      - name: Resolver ISSUE_NODE_ID (evento ou manual)
+        id: issue
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.issue_number }}" ]; then
+            NUM="${{ inputs.issue_number }}"
+          else
+            NUM="${{ github.event.issue.number }}"
           fi
+          if [ -z "$NUM" ]; then
+            echo "Nenhum issue_number disponível. Abra via 'issues: opened' ou use workflow_dispatch com issue_number." >&2
+            exit 1
+          fi
+          echo "ISSUE_NUMBER=$NUM" >> $GITHUB_ENV
+          NODE_ID=$(gh api repos/${{ github.repository }}/issues/$NUM -q .node_id)
+          echo "ISSUE_NODE_ID=$NODE_ID" >> $GITHUB_ENV
+          echo "node_id=$NODE_ID"
 
-      - name: Compute TODAY (local São Paulo)
-        run: echo "TODAY=$(TZ=America/Sao_Paulo date +%F)" >> $GITHUB_ENV
-
-      - name: Fetch Project, Iteration field and Item (GraphQL)
+      - name: Adicionar item ao Project (idempotente)
+        id: additem
+        shell: bash
         run: |
-          set -euo pipefail
-
-          ISSUE_NODE_ID="${{ github.event.issue.node_id }}"
-
-          # Query p/ org ou user (tenta ambos e usa o que vier)
-          read -r -d '' Q <<'GRAPHQL'
-          query($owner:String!, $number:Int!) {
-            org: organization(login:$owner) {
-              projectV2(number:$number) {
-                id
-                fields(first:50){
-                  nodes{
-                    ... on ProjectV2IterationField {
-                      id name
-                      configuration { iterations { id title startDate duration } }
-                    }
-                  }
-                }
-              }
-            }
-            user: user(login:$owner) {
-              projectV2(number:$number) {
-                id
-                fields(first:50){
-                  nodes{
-                    ... on ProjectV2IterationField {
-                      id name
-                      configuration { iterations { id title startDate duration } }
-                    }
-                  }
-                }
-              }
+          read -r -d '' MUT <<'GRAPHQL'
+          mutation($project:ID!, $content:ID!){
+            addProjectV2ItemById(input:{projectId:$project, contentId:$content}) {
+              item { id }
             }
           }
           GRAPHQL
+          gh api graphql -f query="$MUT" -f project="$PROJECT_ID" -f content="$ISSUE_NODE_ID" > add.json || true
 
-          gh api graphql -f query="$Q" -f owner="$OWNER" -F number="$PROJECT_NUMBER" > project.json
-
-          # Escolhe org ou user, o que existir
-          PROJECT_ID=$(jq -r '.data.org.projectV2.id // .data.user.projectV2.id' project.json)
-          if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
-            echo "Project não encontrado (confira OWNER/PROJECT_NUMBER)."
-            exit 1
-          fi
-
-          # Pega o primeiro campo Iteration
-          FIELD_ID=$(jq -r '.data.org.projectV2.fields.nodes[0].id // .data.user.projectV2.fields.nodes[0].id' project.json)
-          if [ "$FIELD_ID" = "null" ] || [ -z "$FIELD_ID" ]; then
-            echo "Campo Iteration não encontrado. Crie um campo Iteration no Project e configure start/duration."
-            exit 1
-          fi
-
-          # Descobre a iteração "atual" (startDate <= hoje < start+duration)
-          ITERATION_ID=$(jq -r --arg TODAY "$TODAY" '
-            (.data.org.projectV2 // .data.user.projectV2).fields.nodes[0].configuration.iterations[]
-            | select(.startDate != null and .duration != null)
-            | select(($TODAY >= .startDate) and ($TODAY < (((.startDate|fromdate) + (.duration*86400))|strftime("%Y-%m-%d"))))
-            | .id
-          ' project.json)
-
-          if [ -z "$ITERATION_ID" ]; then
-            echo "Nenhuma iteração atual encontrada para a data $TODAY. Revise as datas/duração no campo Iteration."
-            exit 1
-          fi
-
-          echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
-          echo "FIELD_ID=$FIELD_ID" >> $GITHUB_ENV
-          echo "ITERATION_ID=$ITERATION_ID" >> $GITHUB_ENV
-          echo "ISSUE_NODE_ID=$ISSUE_NODE_ID" >> $GITHUB_ENV
-
-      - name: Ensure item exists in Project (add if missing)
-        run: |
-          set -euo pipefail
-
-          # Tenta achar o item do Project pela issue
+          # Buscar o ITEM_ID correspondente à issue dentro do Project
           read -r -d '' Q <<'GRAPHQL'
-          query($project:ID!, $issue:ID!) {
+          query($project:ID!, $issue:String!) {
             node(id:$project) {
               ... on ProjectV2 {
-                items(first:50, query:$issue) {
-                  nodes { id content { ... on Issue { id } } }
+                items(first:100, query:$issue) { nodes { id } }
+              }
+            }
+          }
+          GRAPHQL
+          ITEM_ID=$(gh api graphql -f query="$Q" -f project="$PROJECT_ID" -f issue="$ISSUE_NODE_ID" -q .data.node.items.nodes[0].id)
+          if [ -z "$ITEM_ID" ]; then
+            echo "Item não encontrado no Project (verifique permissões do token e acesso ao Project)." >&2
+            echo "Resposta add.json:"; cat add.json || true
+            exit 1
+          fi
+          echo "ITEM_ID=$ITEM_ID" >> $GITHUB_ENV
+          echo "item_id=$ITEM_ID"
+
+      - name: Obter config do campo Iteration
+        id: getfield
+        shell: bash
+        run: |
+          read -r -d '' Q <<'GRAPHQL'
+          query($project:ID!){
+            node(id:$project){
+              ... on ProjectV2 {
+                fields(first:50){
+                  nodes{
+                    __typename
+                    ... on ProjectV2IterationField {
+                      id name
+                      configuration { iterations { id title startDate duration } }
+                    }
+                  }
                 }
               }
             }
           }
           GRAPHQL
+          gh api graphql -f query="$Q" -f project="$PROJECT_ID" > project_fields.json
+          echo "Baixado project_fields.json"
+          # salvar também a data de hoje em SP
+          echo "TODAY=$(TZ=America/Sao_Paulo date +%F)" >> $GITHUB_ENV
+          echo "today=$(TZ=America/Sao_Paulo date +%F)"
 
-          gh api graphql -f query="$Q" -f project="$PROJECT_ID" -f issue="$ISSUE_NODE_ID" > items.json
-          ITEM_ID=$(jq -r '.data.node.items.nodes[0].id' items.json)
-
-          if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
-            echo "Item não está no Project. Adicionando..."
-            read -r -d '' M <<'GRAPHQL'
-            mutation($project:ID!, $content:ID!) {
-              addProjectV2ItemById(input:{projectId:$project, contentId:$content}) {
-                item { id }
-              }
-            }
-            GRAPHQL
-            gh api graphql -f query="$M" -f project="$PROJECT_ID" -f content="$ISSUE_NODE_ID" > add.json
-            ITEM_ID=$(jq -r '.data.addProjectV2ItemById.item.id' add.json)
-          fi
-
-          echo "ITEM_ID=$ITEM_ID" >> $GITHUB_ENV
-          echo "Item no Project: $ITEM_ID"
-
-      - name: Set Iteration = Current
+      - name: Calcular iterationId atual (São Paulo)
+        id: pickiter
+        shell: bash
         run: |
-          set -euo pipefail
-          read -r -d '' M <<'GRAPHQL'
-          mutation($project:ID!, $item:ID!, $field:ID!, $iter:ID!){
+          python3 - <<'PY' | tee iter.env
+          import json, os, sys, datetime
+          from datetime import date, timedelta
+
+          today = os.environ.get("TODAY")
+          if not today:
+              print("Sem TODAY no env", file=sys.stderr); sys.exit(1)
+          today = date.fromisoformat(today)
+
+          data = json.load(open("project_fields.json","r", encoding="utf-8"))
+          fields = data["data"]["node"]["fields"]["nodes"]
+
+          # Achar o campo Iteration correto pelo FIELD_ID fixo
+          FIELD_ID = os.environ["FIELD_ID"]
+          iter_field = None
+          for f in fields:
+              if f.get("__typename") == "ProjectV2IterationField" and f.get("id") == FIELD_ID:
+                  iter_field = f
+                  break
+
+          if not iter_field:
+              print("Campo Iteration não encontrado pelo FIELD_ID fornecido.", file=sys.stderr)
+              sys.exit(1)
+
+          iterations = iter_field["configuration"]["iterations"] or []
+          current = None
+          for it in iterations:
+              sd = it.get("startDate")
+              dur = it.get("duration")
+              if not sd or not dur:
+                  continue
+              start = date.fromisoformat(sd)
+              end = start + timedelta(days=int(dur))
+              if start <= today < end:
+                  current = it["id"]
+                  break
+
+          if not current:
+              print("Nenhuma iteração atual encontrada (confira startDate/duration no campo Iteration).", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"ITERATION_ID={current}")
+          PY
+          # exportar var para próximos passos
+          source iter.env
+          echo "$ITERATION_ID" >/dev/null
+          echo "ITERATION_ID=$ITERATION_ID" >> $GITHUB_ENV
+
+      - name: Aplicar Iteration = current
+        shell: bash
+        run: |
+          read -r -d '' MUT <<'GRAPHQL'
+          mutation($project:ID!, $item:ID!, $field:ID!, $iter:String!){
             updateProjectV2ItemFieldValue(
               input:{projectId:$project, itemId:$item, fieldId:$field, value:{iterationId:$iter}}
             ){ clientMutationId }
           }
           GRAPHQL
-
-          gh api graphql -f query="$M" \
+          gh api graphql -f query="$MUT" \
             -f project="$PROJECT_ID" \
             -f item="$ITEM_ID" \
             -f field="$FIELD_ID" \
             -f iter="$ITERATION_ID"
-
-          echo "✅ Iteration setada para a iteração atual."
+          echo "✅ Iteration aplicada."
