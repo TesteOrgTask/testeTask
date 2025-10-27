@@ -55,6 +55,7 @@ jobs:
         id: additem
         shell: bash
         run: |
+          # 1) adicionar a issue ao Project (idempotente)
           MUT='mutation($project:ID!, $content:ID!){
             addProjectV2ItemById(input:{projectId:$project, contentId:$content}) {
               item { id }
@@ -63,20 +64,47 @@ jobs:
           gh api graphql -f query="$MUT" -f project="$PROJECT_ID" -f content="$ISSUE_NODE_ID" > add.json || true
           echo "add.json:"; cat add.json || true
 
-          Q='query($project:ID!, $issue:String!) {
-            node(id:$project) {
-              ... on ProjectV2 {
-                items(first:100, query:$issue) { nodes { id } }
+          # 2) tentar extrair o ITEM_ID direto do retorno
+          python3 - <<'PY' > item.env
+          import json, sys
+          try:
+              data = json.load(open('add.json','r',encoding='utf-8'))
+              iid = data['data']['addProjectV2ItemById']['item']['id']
+              if iid:
+                  print(f"ITEM_ID={iid}")
+          except Exception as e:
+              pass
+          PY
+
+          # 3) se não veio, fazer fallback com retry (até 5 tentativas)
+          source item.env 2>/dev/null || true
+          if [ -z "${ITEM_ID:-}" ]; then
+            echo "ITEM_ID não veio no retorno; tentando localizar via query (com retry)..."
+            Q='query($project:ID!, $issue:String!) {
+              node(id:$project) {
+                ... on ProjectV2 {
+                  items(first:100, query:$issue) { nodes { id } }
+                }
               }
-            }
-          }'
-          ITEM_ID=$(gh api graphql -f query="$Q" -f project="$PROJECT_ID" -f issue="$ISSUE_NODE_ID" -q .data.node.items.nodes[0].id)
-          if [ -z "$ITEM_ID" ]; then
-            echo "Item não encontrado no Project." >&2
+            }'
+            for i in 1 2 3 4 5; do
+              ITEM_ID=$(gh api graphql -f query="$Q" -f project="$PROJECT_ID" -f issue="$ISSUE_NODE_ID" -q .data.node.items.nodes[0].id 2>/dev/null || true)
+              if [ -n "$ITEM_ID" ]; then
+                break
+              fi
+              echo "retry $i..."
+              sleep 2
+            done
+          fi
+
+          if [ -z "${ITEM_ID:-}" ]; then
+            echo "Item não encontrado no Project após adicionar e retries." >&2
             exit 1
           fi
+
           echo "ITEM_ID=$ITEM_ID" >> $GITHUB_ENV
           echo "item_id=$ITEM_ID"
+
 
       - name: Obter config do campo Iteration
         id: getfield
