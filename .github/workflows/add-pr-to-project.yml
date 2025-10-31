@@ -1,0 +1,30 @@
+name: Add PR to Project
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add PR to Project v2
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const query = `
+              mutation($projectId: ID!, $prId: ID!) {
+                addProjectV2ItemById(input: {projectId: $projectId, contentId: $prId}) {
+                  item {
+                    id
+                  }
+                }
+              }`;
+
+            const variables = {
+              projectId: "PVT_kwDODkGqB84BGE05", // substitua pelo ID do seu Project
+              prId: context.payload.pull_request.node_id
+            };
+
+            await github.graphql(query, variables);
