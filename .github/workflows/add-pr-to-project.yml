@@ -11,7 +11,7 @@ jobs:
       - name: Add PR to Project v2
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PROJECT_TOKEN }}
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
           script: |
             const query = `
               mutation($projectId: ID!, $prId: ID!) {
@@ -23,7 +23,7 @@ jobs:
               }`;
 
             const variables = {
-              projectId: "PVT_kwDODkGqB84BGE05", // substitua pelo ID do seu Project
+              projectId: "PVT_kwDODkGqB84BGE05", 
               prId: context.payload.pull_request.node_id
             };
 
