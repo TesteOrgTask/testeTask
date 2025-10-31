@@ -1,4 +1,4 @@
-name: Add PR to Project and Assign
+name: Add PR to Project + Assign
 
 on:
   pull_request:
@@ -13,85 +13,113 @@ jobs:
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN }}
           script: |
-            const projectId = "PVT_kwDODkGqB84BGE05"; // ID do seu Project
-            const assigneeLogin = "AmorimAntonio"; // GitHub username a ser atribuído
+            const projectId = "PVT_kwDODkGqB84BGE05";   // <-- troque
+            const assigneeLogin = "AmorimAntonio";  // <-- troque
 
-            // 1️⃣ Adiciona o PR ao Project
-            const addItem = await github.graphql(
+            // 1) Adiciona o PR ao Project
+            const addRes = await github.graphql(
               `
-              mutation($projectId: ID!, $prId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $prId}) {
-                  item {
-                    id
-                  }
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item { id }
                 }
               }
               `,
               {
                 projectId,
-                prId: context.payload.pull_request.node_id,
+                contentId: context.payload.pull_request.node_id,
               }
             );
+            const itemId = addRes.addProjectV2ItemById.item.id;
 
-            const itemId = addItem.addProjectV2ItemById.item.id;
-
-            // 2️⃣ Pega o campo "Assignees" do seu Project (você precisa descobrir o ID dele uma vez)
-            const fields = await github.graphql(`
-              query {
-                node(id: "${projectId}") {
+            // 2) Descobre o ID do campo "Assignees" (union -> usar fragments)
+            const fieldsRes = await github.graphql(
+              `
+              query($projectId: ID!) {
+                node(id: $projectId) {
                   ... on ProjectV2 {
-                    fields(first: 20) {
+                    fields(first: 100) {
                       nodes {
-                        id
-                        name
+                        __typename
+                        ... on ProjectV2Field { id name dataType }
+                        ... on ProjectV2SingleSelectField { id name }
+                        ... on ProjectV2IterationField { id name }
+                        ... on ProjectV2RepositoryField { id name }
+                        ... on ProjectV2UsersField { id name }
+                        ... on ProjectV2LabelField { id name }
+                        ... on ProjectV2MilestoneField { id name }
+                        ... on ProjectV2TextField { id name }
+                        ... on ProjectV2DateField { id name }
+                        ... on ProjectV2NumberField { id name }
+                        ... on ProjectV2TrackedByField { id name }
+                        ... on ProjectV2LinkedPullRequestsField { id name }
                       }
                     }
                   }
                 }
               }
-            `);
+              `,
+              { projectId }
+            );
 
-            const assigneeField = fields.node.fields.nodes.find(f => f.name === "Assignees");
-            if (!assigneeField) {
-              core.warning("Campo 'Assignees' não encontrado no Project.");
-              return;
-            }
+            const nodes = fieldsRes.node.fields.nodes;
+            const assigneesField = nodes.find(n =>
+              (n.__typename === "ProjectV2UsersField" || n.__typename === "ProjectV2Field") &&
+              n.name === "Assignees"
+            );
 
-            // 3️⃣ Busca o ID do usuário pelo login
-            const user = await github.graphql(
+            // 3) Busca ID do usuário a ser atribuído
+            const userRes = await github.graphql(
               `
               query($login: String!) {
-                user(login: $login) {
-                  id
-                }
+                user(login: $login) { id }
               }
               `,
               { login: assigneeLogin }
             );
+            const userId = userRes.user.id;
 
-            const userId = user.user.id;
-
-            // 4️⃣ Define o assignee no campo correspondente
-            await github.graphql(
-              `
-              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $userId: ID!) {
-                updateProjectV2ItemFieldValue(
-                  input: {
-                    projectId: $projectId
-                    itemId: $itemId
-                    fieldId: $fieldId
-                    value: { 
-                      users: [ $userId ] 
+            // 4) Tenta atribuir pelo campo do Project (preferível)
+            let assignedViaProject = false;
+            if (assigneesField?.id) {
+              try {
+                await github.graphql(
+                  `
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $userId: ID!) {
+                    updateProjectV2ItemFieldValue(
+                      input: {
+                        projectId: $projectId
+                        itemId: $itemId
+                        fieldId: $fieldId
+                        value: { users: [$userId] }
+                      }
+                    ) {
+                      projectV2Item { id }
                     }
                   }
-                ) {
-                  projectV2Item {
-                    id
-                  }
-                }
+                  `,
+                  { projectId, itemId, fieldId: assigneesField.id, userId }
+                );
+                core.info(\`✅ Atribuído no Project via campo "Assignees" (\${assigneesField.__typename})\`);
+                assignedViaProject = true;
+              } catch (e) {
+                core.warning("Falha ao atribuir no Project: " + e.message);
               }
-              `,
-              { projectId, itemId, fieldId: assigneeField.id, userId }
-            );
+            } else {
+              core.warning("Campo 'Assignees' não encontrado no Project.");
+            }
 
-            console.log(`✅ PR adicionado ao Project e atribuído a ${assigneeLogin}`);
+            // 5) Fallback: atribui o PR diretamente (REST). O Project costuma espelhar.
+            if (!assignedViaProject) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  assignees: [assigneeLogin],
+                });
+                core.info("✅ Fallback: PR atribuído via REST (issues.addAssignees).");
+              } catch (e) {
+                core.setFailed("❌ Falhou atribuição via Project e via REST: " + e.message);
+              }
+            }
