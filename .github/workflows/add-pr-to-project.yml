@@ -44,5 +44,5 @@ jobs:
               });
             }
         env:
-          PROJECT_ID: PVT_xxxxxxxxxxxxxxxxx      # ID PVT do Project
+          PROJECT_ID: PVT_kwDODkGqB84BGE05      # ID PVT do Project
           ASSIGNEES: AmorimAntonio           # logins separados por vírgula
