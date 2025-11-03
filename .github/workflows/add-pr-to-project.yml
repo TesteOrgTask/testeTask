@@ -1,4 +1,4 @@
-name: Add PR to Project and Assign (multi)
+name: Add PR to Project and set ToDo + Assign
 
 on:
   pull_request:
@@ -11,30 +11,72 @@ permissions:
   repository-projects: write
 
 jobs:
-  add-and-assign:
+  add-pr:
     runs-on: ubuntu-latest
     steps:
-      - name: Add PR to Project v2, then assign multiple
+      - name: Add PR to Project v2, set To Do, and assign
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN }}
           script: |
             const projectId = process.env.PROJECT_ID;
-            const assignees = process.env.ASSIGNEES.split(',').map(s => s.trim()).filter(Boolean);
+            const assignees = process.env.ASSIGNEES.split(',').map(a => a.trim());
 
-            // 1) Add PR to Project (GraphQL)
-            const addMutation =
-              'mutation($projectId: ID!, $contentId: ID!) {' +
-              '  addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {' +
-              '    item { id }' +
-              '  }' +
-              '}';
-            await github.graphql(addMutation, {
-              projectId,
-              contentId: context.payload.pull_request.node_id
-            });
+            // 1️⃣ Adiciona o PR ao Project
+            const add = await github.graphql(
+              `mutation($projectId: ID!, $contentId: ID!) {
+                 addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                   item { id }
+                 }
+               }`,
+              { projectId, contentId: context.payload.pull_request.node_id }
+            );
+            const itemId = add.addProjectV2ItemById.item.id;
 
-            // 2) Assign PR to multiple users (REST) — Project espelha no campo Assignees
+            // 2️⃣ Busca campo "Status" e ID da opção "To Do"
+            const fields = await github.graphql(
+              `query($projectId: ID!) {
+                 node(id: $projectId) {
+                   ... on ProjectV2 {
+                     fields(first: 50) {
+                       nodes {
+                         ... on ProjectV2SingleSelectField {
+                           id
+                           name
+                           options { id name }
+                         }
+                       }
+                     }
+                   }
+                 }
+               }`,
+              { projectId }
+            );
+
+            const statusField = fields.node.fields.nodes.find(f => f.name === "Status");
+            const todoOption = statusField?.options?.find(o => o.name.toLowerCase() === "todo");
+            if (statusField && todoOption) {
+              await github.graphql(
+                `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                   updateProjectV2ItemFieldValue(input: {
+                     projectId: $projectId
+                     itemId: $itemId
+                     fieldId: $fieldId
+                     value: { singleSelectOptionId: $optionId }
+                   }) { projectV2Item { id } }
+                 }`,
+                {
+                  projectId,
+                  itemId,
+                  fieldId: statusField.id,
+                  optionId: todoOption.id
+                }
+              );
+            } else {
+              core.warning('Campo "Status" ou opção "To Do" não encontrados.');
+            }
+
+            // 3️⃣ Atribui usuários no PR (Project espelha)
             if (assignees.length) {
               await github.rest.issues.addAssignees({
                 owner: context.repo.owner,
@@ -44,5 +86,5 @@ jobs:
               });
             }
         env:
-          PROJECT_ID: PVT_kwDODkGqB84BGE05      # ID PVT do Project
-          ASSIGNEES: AmorimAntonio           # logins separados por vírgula
+          PROJECT_ID: PVT_kwDODkGqB84BGE05    # <-- ID do seu Project
+          ASSIGNEES: AmorimAntonio              # <-- logins separados por vírgula
